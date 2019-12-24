@@ -10,6 +10,7 @@ library(openNLPmodels.en)
 library(useful)
 library(kernlab)
 library(class)
+library(e1071)
 
 # setwd("C:/Users/Melanija/Desktop/Gradiva/5 semestar/IS/2. Seminarska")
 setwd("C:/Users/Jana/Documents/fax/3.letnik/1.semester/IS/2.domaca/")
@@ -25,6 +26,7 @@ corpus <- tm_map(corpus, removeWords, stopwords('english'))
 conn = file("english.stop.txt", open="r")
 mystopwords = readLines(conn)
 close(conn)
+#Remove unknown symbols
 corpus <- tm_map(corpus, removeWords, mystopwords)
 conn = file("unknownWords.txt", open="r")
 unknown = readLines(conn)
@@ -63,8 +65,6 @@ for (i in 1:length(corpus)){
   corpus <- tm_map(corpus, removeWords, as.vector(entities(ann, "organization")))
   content(corpus[[i]])
 }
-
-#Remove unknown symbols
 
 
 # 2.Exploration
@@ -156,6 +156,12 @@ for (i in 1:length(test_corpus)){
 
 test_tdm <- TermDocumentMatrix(test_corpus)
 
+#
+#
+# NE VEM CE JE PRAVILNO?
+#
+#
+
 # SVM -> works good on texts
 # svm with a radial basis kernel
 model.svm <- ksvm(label ~ ., tdm, kernel = "rbfdot")
@@ -174,15 +180,15 @@ precision <- t[1,1]/sum(t[,1])
 # F1 score
 f1 <- (2*recall*precision)/(precision+recall)
 
-library(e1071)
 # Naive bayes -> simple and not too bad
 
 #
 #
-# nevem zakaj ne dela...
+# nevem kako na isto dolzino....
 #
 #
-model.nb <- naiveBayes(as.matrix((tdm)), as.factor(train$label))
+
+model.nb <- naiveBayes(as.matrix(tdm), as.factor(train$label))
 rs<- predict(model, as.matrix((test$label)))
 
 # hyperparameter
