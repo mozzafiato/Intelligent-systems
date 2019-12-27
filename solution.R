@@ -1,3 +1,5 @@
+gc()
+rm(list = ls())
 options(java.parameters = "- Xmx1024m")
 library(ggplot2)
 library(tm)
@@ -13,13 +15,14 @@ library(kernlab)
 library(class)
 library(e1071)
 library(textclean)
-library(factoextra)
+library(mlr)
 
  setwd("C:/Users/Melanija/Desktop/Gradiva/5 semestar/IS/2. Seminarska")
 #setwd("C:/Users/Jana/Documents/fax/3.letnik/1.semester/IS/2.domaca/")
 
 train <- read.table(file = 'insults/train.tsv', sep = '\t', header = TRUE)
 test <- read.table(file = 'insults/test.tsv', sep = '\t', header = TRUE)
+data <- rbind(train, test)
 
 # 1.Cleaning
 clean_data <- function (data) {
@@ -76,13 +79,16 @@ clean_data <- function (data) {
   corpus
 }
 
-train_corpus <- clean_data(train)
+corpus <- clean_data(data)
+train_corpus <- corpus[1:dim(train)[1]]
 content(train_corpus[[1]])
+test_corpus <- corpus[(dim(train)[1]+1):length(corpus)]
+content(test_corpus[[1]])
 
 # 2.Exploration
 
 #Plot the frequency of words
-tdm <- TermDocumentMatrix(corpus)
+tdm <- TermDocumentMatrix(train_corpus)
 termFrequency <- rowSums(as.matrix(tdm))
 #termFrequency <- subset(termFrequency, termFrequency >= 10)
 qplot(seq(length(termFrequency)),sort(termFrequency), xlab = "index", ylab = "Freq")
@@ -90,7 +96,9 @@ qplot(seq(length(termFrequency)),sort(termFrequency), xlab = "index", ylab = "Fr
 #Clustering
 
 #of of documents according to co-occurrence of terms
-dtm <- DocumentTermMatrix(corpus, control = list(weighting=weightTfIdf))
+dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
+rowTotals <- apply(dtm , 1, sum)
+dtm <- dtm[rowTotals> 0, ]
 mat <- as.matrix(dtm)
 k <- c(2, 4, 8, 16)
 
@@ -124,48 +132,69 @@ posvectors[[i]] <- tags
 table(train$label)
 table(test$label)
 
-# Identify the class column
-train_corpus <- clean_data(test)
-content(test_corpus[[1]])
-test_tdm <- TermDocumentMatrix(test_corpus)
-
-#
-#
-# NE VEM CE JE PRAVILNO?
-#
-#
+#Preparing data
+dtm <- DocumentTermMatrix(corpus, control = list(weighting=weightTfIdf))
+matrix <- cbind(as.matrix(dtm), data$label)
+training_set <- matrix[1:dim(train)[1],]
+names(training_set)[ncol(training_set)] <- "label"
+testing_set <- matrix[(dim(train)[1]+1):dim(matrix)[1],-1]
 
 # SVM -> works good on texts
 # svm with a radial basis kernel
-model.svm <- ksvm(label ~ ., tdm, kernel = "rbfdot")
-predicted <- predict(model.svm, test_tdm, type = "response")
-t <- table(observed, predicted)
+#dela, sam vrne zelo slabe rezultate (accuracy, recall... tudi primer na vajah vrne podobno idk)
+model.svm <- ksvm(label ~ ., training_set , kernel = "rbfdot")
+predicted <- predict(model.svm, testing_set, type = "response")
+t <- table(test$label, predicted)
 
 # Classification accuracy
 sum(diag(t))/sum(t)
-
 # Recall
 recall <- t[1,1]/sum(t[1,])
-
 # Precision
 precision <- t[1,1]/sum(t[,1])
-
 # F1 score
 f1 <- (2*recall*precision)/(precision+recall)
 
+#HyperParameter tuning SVM
+
+#vrne error za target
+ksvm_task = makeClassifTask(data = as.data.frame(training_set), target = "label")
+discrete_ps = makeParamSet(
+  makeDiscreteParam("C", values = c(0.01, 0.05, 0.1,0.5)),
+  makeDiscreteParam("sigma", values = c(0.005, 0.01, 0.05, 0.1,0.5))
+)
+print(discrete_ps)
+
+ctrl = makeTuneControlGrid()
+rdesc = makeResampleDesc("CV", iters = 3L)
+
+res = tuneParams("classif.ksvm", ksvm_task , rdesc, measures=acc, par.set = discrete_ps, control = ctrl)
+print(res)
+
+
 # Naive bayes -> simple and not too bad
 
-#
-#
-# nevem kako na isto dolzino....
-#
-#
+model.nb <- naiveBayes(training_set[,-ncol(training_set)], training_set[,ncol(training_set)])
+predicted_nb<- predict(model.nb, testing_set)
+t <- table(test$label, predicted_nb)
 
-model.nb <- naiveBayes(as.matrix(tdm), as.factor(train$label))
-rs<- predict(model, as.matrix((test$label)))
+# Classification accuracy
+sum(diag(t))/sum(t)
+# Recall
+recall <- t[1,1]/sum(t[1,])
+# Precision
+precision <- t[1,1]/sum(t[,1])
+# F1 score
+f1 <- (2*recall*precision)/(precision+recall)
 
 # hyperparameter
 library(caret)
 
 control <- trainControl(method="repeatedcv", number=10, repeats=3)
-model <- train(label~., data=train, method="nb", trControl=control, tuneLength=5)
+model <- train(label~., data=training_set, method="nb", trControl=control, tuneLength=5)
+
+#Logistic regression
+
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+model <- train(label~., data=training_set[,-ncol(training_set)], method = 'regLogistic', trControl=control)
+
