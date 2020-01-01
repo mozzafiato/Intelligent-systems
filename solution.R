@@ -97,8 +97,8 @@ qplot(seq(length(termFrequency)),sort(termFrequency), xlab = "index", ylab = "Fr
 
 #of of documents according to co-occurrence of terms
 dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
-rowTotals <- apply(dtm , 1, sum)
-dtm <- dtm[rowTotals> 0, ]
+#rowTotals <- apply(dtm , 1, sum)
+#dtm <- dtm[rowTotals> 0, ]
 mat <- as.matrix(dtm)
 k <- c(2, 4, 8, 16)
 
@@ -113,18 +113,29 @@ for(i in 1:length(k)){
 
 #POS vector for each document
 #vrne out of memmory error :/ 
-posvectors <- c()
-for(i in 1:length(corpus)){
-posvectors[[i]] <- c()
+
+pos_ann <- Maxent_POS_Tag_Annotator()
+word_ann <- Maxent_Word_Token_Annotator()
+sent_ann <- Maxent_Sent_Token_Annotator()
+
+posvectors <- list()
+for(i in 1:length(train_corpus)){
+
 s <- as.String(content(corpus[[i]]))
-a1 <- annotate(s, Maxent_Sent_Token_Annotator())
-a2 <- annotate(s, Maxent_Word_Token_Annotator(), a1)
-a3 <- annotate(s, Maxent_POS_Tag_Annotator(), a2)
+if(nchar(trimws(s)) == 0){
+  posvectors[[i]] <- NULL
+  next
+}
+
+a1 <- annotate(s, sent_ann)
+a2 <- annotate(s, word_ann, a1)
+a3 <- annotate(s, pos_ann, a2)
 a3w <- subset(a3, type == "word")
 tags <- sapply(a3w$features, `[[`, "POS")
 print(tags)
 print(length(tags))
 posvectors[[i]] <- tags
+print(posvectors[[i]])
 }
 
 # 3.MODELING
@@ -158,17 +169,17 @@ f1 <- (2*recall*precision)/(precision+recall)
 #HyperParameter tuning SVM
 
 #vrne error za target
-ksvm_task = makeClassifTask(data = as.data.frame(training_set), target = "label")
-discrete_ps = makeParamSet(
+ksvm_task <- makeClassifTask(data = as.data.frame(training_set), target = "label")
+discrete_ps <- makeParamSet(
   makeDiscreteParam("C", values = c(0.01, 0.05, 0.1,0.5)),
   makeDiscreteParam("sigma", values = c(0.005, 0.01, 0.05, 0.1,0.5))
 )
 print(discrete_ps)
 
-ctrl = makeTuneControlGrid()
-rdesc = makeResampleDesc("CV", iters = 3L)
+ctrl <- makeTuneControlGrid()
+rdesc <- makeResampleDesc("CV", iters = 3L)
 
-res = tuneParams("classif.ksvm", ksvm_task , rdesc, measures=acc, par.set = discrete_ps, control = ctrl)
+res <- tuneParams("classif.ksvm", ksvm_task , rdesc, measures=acc, par.set = discrete_ps, control = ctrl)
 print(res)
 
 
