@@ -16,6 +16,7 @@ library(class)
 library(e1071)
 library(textclean)
 library(mlr)
+library(caret)
 
  setwd("C:/Users/Melanija/Desktop/Gradiva/5 semestar/IS/2. Seminarska")
 #setwd("C:/Users/Jana/Documents/fax/3.letnik/1.semester/IS/2.domaca/")
@@ -97,23 +98,20 @@ qplot(seq(length(termFrequency)),sort(termFrequency), xlab = "index", ylab = "Fr
 
 #of of documents according to co-occurrence of terms
 dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
-#rowTotals <- apply(dtm , 1, sum)
-#dtm <- dtm[rowTotals> 0, ]
 mat <- as.matrix(dtm)
 k <- c(2, 4, 8, 16)
 
-#nism ziher ce pravilno rise oz. ce je to zahtevano
 for(i in 1:length(k)){
   kmeansResult <- kmeans(mat, k[i])
   tsne.proj <- Rtsne(as.matrix(kmeansResult$cluster), perplexity=10, theta=0.2, dims=2, check_duplicates = F)
   df.tsne <-tsne.proj$Y
-  #print(qplot(df.tsne[,1],df.tsne[,2], color = kmeansResult$cluster))
+  #visualize the cluster assignments
+  print(qplot(df.tsne[,1],df.tsne[,2], color = kmeansResult$cluster))
+  #plot document representations according to class labels
   print(qplot(df.tsne[,1],df.tsne[,2], color = train$label))
 }
 
 #POS vector for each document
-#vrne out of memmory error :/ 
-
 pos_ann <- Maxent_POS_Tag_Annotator()
 word_ann <- Maxent_Word_Token_Annotator()
 sent_ann <- Maxent_Sent_Token_Annotator()
@@ -126,16 +124,12 @@ if(nchar(trimws(s)) == 0){
   posvectors[[i]] <- NULL
   next
 }
-
 a1 <- annotate(s, sent_ann)
 a2 <- annotate(s, word_ann, a1)
 a3 <- annotate(s, pos_ann, a2)
 a3w <- subset(a3, type == "word")
 tags <- sapply(a3w$features, `[[`, "POS")
-print(tags)
-print(length(tags))
 posvectors[[i]] <- tags
-print(posvectors[[i]])
 }
 
 # 3.MODELING
@@ -145,17 +139,15 @@ table(test$label)
 
 #Preparing data
 dtm <- DocumentTermMatrix(corpus, control = list(weighting=weightTfIdf))
-matrix <- cbind(as.matrix(dtm), data$label)
-training_set <- matrix[1:dim(train)[1],]
-names(training_set)[ncol(training_set)] <- "label"
-testing_set <- matrix[(dim(train)[1]+1):dim(matrix)[1],-1]
+matrix <- cbind(as.matrix(dtm),data$label)
+training_set <- matrix[1:dim(train)[1],-ncol(matrix)]
+testing_set <- matrix[(dim(train)[1]+1):dim(matrix)[1],-ncol(matrix)]
 
-# SVM -> works good on texts
+# SVM -> works good on texts DELAA 
 # svm with a radial basis kernel
-#dela, sam vrne zelo slabe rezultate (accuracy, recall... tudi primer na vajah vrne podobno idk)
-model.svm <- ksvm(label ~ ., training_set , kernel = "rbfdot")
+model.svm <- ksvm(training_set, make.names(as.factor(train$label)), kernel = "rbfdot")
 predicted <- predict(model.svm, testing_set, type = "response")
-t <- table(test$label, predicted)
+t <- table(make.names(test$label), predicted)
 
 # Classification accuracy
 sum(diag(t))/sum(t)
@@ -168,8 +160,8 @@ f1 <- (2*recall*precision)/(precision+recall)
 
 #HyperParameter tuning SVM
 
-#vrne error za target
-ksvm_task <- makeClassifTask(data = as.data.frame(training_set), target = "label")
+#Se ta error je ostal:
+ksvm_task <- makeClassifTask(data = data.frame(training_set), target = "label")
 discrete_ps <- makeParamSet(
   makeDiscreteParam("C", values = c(0.01, 0.05, 0.1,0.5)),
   makeDiscreteParam("sigma", values = c(0.005, 0.01, 0.05, 0.1,0.5))
@@ -183,12 +175,29 @@ res <- tuneParams("classif.ksvm", ksvm_task , rdesc, measures=acc, par.set = dis
 print(res)
 
 
-# Naive bayes -> simple and not too bad
+# DELAAA <3
+# Stohastic Gradient Boost
 
-model.nb <- naiveBayes(training_set[,-ncol(training_set)], training_set[,ncol(training_set)])
-predicted_nb<- predict(model.nb, testing_set)
-t <- table(test$label, predicted_nb)
+man_grid <- expand.grid(n.trees = c(50, 100, 150),
+                        interaction.depth = c(1, 3, 4),
+                        shrinkage = 0.1,
+                        n.minobsinnode = 10)
 
+control <- trainControl(method='cv',
+                        number=3, 
+                        returnResamp='none', 
+                        summaryFunction = twoClassSummary, 
+                        classProbs = TRUE)
+
+objModel <- train(training_set, 
+                  make.names(train$label), 
+                  method='gbm', 
+                  trControl=control,
+                  verbose = FALSE,
+                  tuneGrid = man_grid)
+
+predictions <- predict(object=objModel,testing_set, type='raw')
+t <- table(make.names(test$label), predictions)
 # Classification accuracy
 sum(diag(t))/sum(t)
 # Recall
@@ -197,15 +206,3 @@ recall <- t[1,1]/sum(t[1,])
 precision <- t[1,1]/sum(t[,1])
 # F1 score
 f1 <- (2*recall*precision)/(precision+recall)
-
-# hyperparameter
-library(caret)
-
-control <- trainControl(method="repeatedcv", number=10, repeats=3)
-model <- train(label~., data=training_set, method="nb", trControl=control, tuneLength=5)
-
-#Logistic regression
-
-control <- trainControl(method="repeatedcv", number=10, repeats=3)
-model <- train(label~., data=training_set[,-ncol(training_set)], method = 'regLogistic', trControl=control)
-
