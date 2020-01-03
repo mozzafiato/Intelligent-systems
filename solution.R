@@ -19,7 +19,7 @@ library(mlr)
 library(caret)
 library(RWeka)
 
- setwd("C:/Users/Melanija/Desktop/Gradiva/5 semestar/IS/2. Seminarska")
+setwd("C:/Users/Melanija/Desktop/Gradiva/5 semestar/IS/2. Seminarska")
 #setwd("C:/Users/Jana/Documents/fax/3.letnik/1.semester/IS/2.domaca/")
 
 train <- read.table(file = 'insults/train.tsv', sep = '\t', header = TRUE)
@@ -119,18 +119,18 @@ sent_ann <- Maxent_Sent_Token_Annotator()
 
 posvectors <- list()
 for(i in 1:length(train_corpus)){
-
-s <- as.String(content(corpus[[i]]))
-if(nchar(trimws(s)) == 0){
-  posvectors[[i]] <- NULL
-  next
-}
-a1 <- annotate(s, sent_ann)
-a2 <- annotate(s, word_ann, a1)
-a3 <- annotate(s, pos_ann, a2)
-a3w <- subset(a3, type == "word")
-tags <- sapply(a3w$features, `[[`, "POS")
-posvectors[[i]] <- tags
+  
+  s <- as.String(content(corpus[[i]]))
+  if(nchar(trimws(s)) == 0){
+    posvectors[[i]] <- NULL
+    next
+  }
+  a1 <- annotate(s, sent_ann)
+  a2 <- annotate(s, word_ann, a1)
+  a3 <- annotate(s, pos_ann, a2)
+  a3w <- subset(a3, type == "word")
+  tags <- sapply(a3w$features, `[[`, "POS")
+  posvectors[[i]] <- tags
 }
 
 # 3.MODELING
@@ -213,3 +213,21 @@ recall <- t[1,1]/sum(t[1,])
 precision <- t[1,1]/sum(t[,1])
 # F1 score
 f1 <- (2*recall*precision)/(precision+recall)
+
+# POS??
+
+# 4.UNDERSTANDING
+library(dplyr)
+library(CORElearn) 
+# feature ranking
+
+# filter method
+estReliefF <- attrEval(label ~ ., data.frame(training_set), estimator="InfGain", ReliefIterations=30)
+
+best10 <- head(sort(estReliefF, decreasing = TRUE), 10)
+matrixBest <- select(data.frame(training_set),names(best10))
+
+
+# wrapper model
+modelRF <- CoreModel(label ~ ., data.frame(training_set), model="rf")
+rfAttrEval(modelRF)
