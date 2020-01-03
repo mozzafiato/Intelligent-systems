@@ -17,6 +17,7 @@ library(e1071)
 library(textclean)
 library(mlr)
 library(caret)
+library(RWeka)
 
  setwd("C:/Users/Melanija/Desktop/Gradiva/5 semestar/IS/2. Seminarska")
 #setwd("C:/Users/Jana/Documents/fax/3.letnik/1.semester/IS/2.domaca/")
@@ -139,7 +140,6 @@ table(test$label)
 
 #Preparing data
 dtm <- DocumentTermMatrix(corpus, control = list(weighting=weightTfIdf))
-matrix <- cbind(as.matrix(dtm),data$label)
 training_set <- matrix[1:dim(train)[1],-ncol(matrix)]
 testing_set <- matrix[(dim(train)[1]+1):dim(matrix)[1],-ncol(matrix)]
 
@@ -160,8 +160,15 @@ f1 <- (2*recall*precision)/(precision+recall)
 
 #HyperParameter tuning SVM
 
+library(mda)
+library(modeltools)
 #Se ta error je ostal:
-ksvm_task <- makeClassifTask(data = data.frame(training_set), target = "label")
+matrix <- cbind(as.matrix(dtm),data$label)
+train_data <- data.frame(matrix[1:dim(train)[1],])
+names(train_data)[ncol(train_data)] <- "label_"
+train_data$label_ <- make.names(train_data$label_)
+
+ksvm_task <- makeClassifTask(data = train_data, target = "label_")
 discrete_ps <- makeParamSet(
   makeDiscreteParam("C", values = c(0.01, 0.05, 0.1,0.5)),
   makeDiscreteParam("sigma", values = c(0.005, 0.01, 0.05, 0.1,0.5))
@@ -173,7 +180,7 @@ rdesc <- makeResampleDesc("CV", iters = 3L)
 
 res <- tuneParams("classif.ksvm", ksvm_task , rdesc, measures=acc, par.set = discrete_ps, control = ctrl)
 print(res)
-
+#Tune #Op. pars: C=0.5; sigma=0.1
 
 # DELAAA <3
 # Stohastic Gradient Boost
