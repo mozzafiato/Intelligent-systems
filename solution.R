@@ -140,6 +140,7 @@ table(test$label)
 
 #Preparing data
 dtm <- DocumentTermMatrix(corpus, control = list(weighting=weightTfIdf))
+matrix <- cbind(as.matrix(dtm),data$label)
 training_set <- matrix[1:dim(train)[1],-ncol(matrix)]
 testing_set <- matrix[(dim(train)[1]+1):dim(matrix)[1],-ncol(matrix)]
 
@@ -163,7 +164,6 @@ f1 <- (2*recall*precision)/(precision+recall)
 library(mda)
 library(modeltools)
 #Se ta error je ostal:
-matrix <- cbind(as.matrix(dtm),data$label)
 train_data <- data.frame(matrix[1:dim(train)[1],])
 names(train_data)[ncol(train_data)] <- "label_"
 train_data$label_ <- make.names(train_data$label_)
