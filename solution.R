@@ -19,8 +19,8 @@ library(mlr)
 library(caret)
 library(RWeka)
 
-setwd("C:/Users/Melanija/Desktop/Gradiva/5 semestar/IS/2. Seminarska")
-#setwd("C:/Users/Jana/Documents/fax/3.letnik/1.semester/IS/2.domaca/")
+#setwd("C:/Users/Melanija/Desktop/Gradiva/5 semestar/IS/2. Seminarska")
+setwd("C:/Users/Jana/Documents/fax/3.letnik/1.semester/IS/2.domaca/")
 
 train <- read.table(file = 'insults/train.tsv', sep = '\t', header = TRUE)
 test <- read.table(file = 'insults/test.tsv', sep = '\t', header = TRUE)
@@ -214,7 +214,6 @@ precision <- t[1,1]/sum(t[,1])
 # F1 score
 f1 <- (2*recall*precision)/(precision+recall)
 
-# POS??
 
 # 4.UNDERSTANDING
 library(dplyr)
@@ -222,12 +221,44 @@ library(CORElearn)
 # feature ranking
 
 # filter method
-estReliefF <- attrEval(label ~ ., data.frame(training_set), estimator="InfGain", ReliefIterations=30)
+estReliefF <- attrEval(label_ ~ ., train_data, estimator="InfGain", ReliefIterations=30)
 
 best10 <- head(sort(estReliefF, decreasing = TRUE), 10)
-matrixBest <- select(data.frame(training_set),names(best10))
+matrixBest10l <- select(train_data,c(names(best10), "label_"))
+
+# re-evaluating models
+# svm with a radial basis kernel
+
+model.svm <- ksvm(matrixBest10, make.names(as.factor(train$label)), kernel = "rbfdot")
+predicted <- predict(model.svm, testing_set, type = "response")
+t <- table(make.names(test$label), predicted)
+
+# Classification accuracy
+sum(diag(t))/sum(t)
+# Recall
+recall <- t[1,1]/sum(t[1,])
+# Precision
+precision <- t[1,1]/sum(t[,1])
+# F1 score
+f1 <- (2*recall*precision)/(precision+recall)
 
 
-# wrapper model
-modelRF <- CoreModel(label ~ ., data.frame(training_set), model="rf")
-rfAttrEval(modelRF)
+matrixBest10 <- select(train_data,names(best10))
+# Stohastic Gradient Boost
+objModel <- train(matrixBest10, 
+                  make.names(train$label), 
+                  method='gbm', 
+                  trControl=control,
+                  verbose = FALSE,
+                  tuneGrid = man_grid)
+
+predic10 <- predict(object=objModel,testing_set, type='raw')
+t10 <- table(make.names(test$label), predic10)
+# Classification accuracy
+sum(diag(t10))/sum(t10)
+# Recall
+recall10 <- t10[1,1]/sum(t10[1,])
+# Precision
+precision10 <- t10[1,1]/sum(t10[,1])
+# F1 score
+f1_10 <- (2*recall10*precision10)/(precision10+recall10)
