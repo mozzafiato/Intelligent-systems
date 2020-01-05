@@ -1,5 +1,6 @@
 gc()
 rm(list = ls())
+options(warn=-1)
 options(java.parameters = "- Xmx1024m")
 library(ggplot2)
 library(tm)
@@ -19,8 +20,8 @@ library(mlr)
 library(caret)
 library(RWeka)
 
-#setwd("C:/Users/Melanija/Desktop/Gradiva/5 semestar/IS/2. Seminarska")
-setwd("C:/Users/Jana/Documents/fax/3.letnik/1.semester/IS/2.domaca/")
+setwd("C:/Users/Melanija/Desktop/Gradiva/5 semestar/IS/2. Seminarska")
+#setwd("C:/Users/Jana/Documents/fax/3.letnik/1.semester/IS/2.domaca/")
 
 train <- read.table(file = 'insults/train.tsv', sep = '\t', header = TRUE)
 test <- read.table(file = 'insults/test.tsv', sep = '\t', header = TRUE)
@@ -147,18 +148,28 @@ testing_set <- matrix[(dim(train)[1]+1):dim(matrix)[1],-ncol(matrix)]
 
 # SVM -> works good on texts DELAA 
 # svm with a radial basis kernel
-model.svm <- ksvm(training_set, make.names(as.factor(train$label)), kernel = "rbfdot")
-predicted <- predict(model.svm, testing_set, type = "response")
-t <- table(make.names(test$label), predicted)
 
-# Classification accuracy
-sum(diag(t))/sum(t)
-# Recall
-recall <- t[1,1]/sum(t[1,])
-# Precision
-precision <- t[1,1]/sum(t[,1])
-# F1 score
-f1 <- (2*recall*precision)/(precision+recall)
+ksvm_model <- function(training_set, testing_set){
+  print("Running model ksvm...")
+  model.svm <- ksvm(training_set, make.names(as.factor(train$label)), kernel = "rbfdot")
+  predicted <- predict(model.svm, testing_set, type = "response")
+  t <- table(make.names(test$label), predicted)
+  
+  # Classification accuracy
+  acc <- sum(diag(t))/sum(t)
+  # Recall
+  recall <- t[1,1]/sum(t[1,])
+  # Precision
+  precision <- t[1,1]/sum(t[,1])
+  # F1 score
+  f1 <- (2*recall*precision)/(precision+recall)
+  cat("Accuracy: ",acc, "\n")
+  cat("F1 score: ",f1, "\n")
+  scores <- c(acc,f1)
+  scores
+}
+
+scores_ksvm <- ksvm_model(training_set,testing_set)
 
 #HyperParameter tuning SVM
 
@@ -171,8 +182,8 @@ train_data$label_ <- make.names(train_data$label_)
 
 ksvm_task <- makeClassifTask(data = train_data, target = "label_")
 discrete_ps <- makeParamSet(
-  makeDiscreteParam("C", values = c(0.01, 0.05, 0.1,0.5)),
-  makeDiscreteParam("sigma", values = c(0.005, 0.01, 0.05, 0.1,0.5))
+  makeDiscreteParam("C", values = c(0.01, 0.05, 0.1,0.5, 1)),
+  makeDiscreteParam("sigma", values = c(0.01, 0.05, 0.1,0.5, 0.6))
 )
 print(discrete_ps)
 
@@ -186,34 +197,44 @@ print(res)
 # DELAAA <3
 # Stohastic Gradient Boost
 
-man_grid <- expand.grid(n.trees = c(50, 100, 150),
-                        interaction.depth = c(1, 3, 4),
-                        shrinkage = 0.1,
-                        n.minobsinnode = 10)
+gbm_model <- function(training_set, testing_set){
+  print("Running model gbm...")
+  man_grid <- expand.grid(n.trees = c(50, 100, 150),
+                          interaction.depth = c(1, 3, 4),
+                          shrinkage = 0.1,
+                          n.minobsinnode = 10)
+  
+  control <- trainControl(method='cv',
+                          number=3, 
+                          returnResamp='none', 
+                          summaryFunction = twoClassSummary, 
+                          classProbs = TRUE)
+  
+  objModel <- train(training_set, 
+                    make.names(train$label), 
+                    method='gbm', 
+                    trControl=control,
+                    verbose = FALSE,
+                    tuneGrid = man_grid)
 
-control <- trainControl(method='cv',
-                        number=3, 
-                        returnResamp='none', 
-                        summaryFunction = twoClassSummary, 
-                        classProbs = TRUE)
+  predictions <- predict(object=objModel,testing_set, type='raw')
+  t <- table(make.names(test$label), predictions)
+  # Classification accuracy
+  acc <- sum(diag(t))/sum(t)
+  # Recall
+  recall <- t[1,1]/sum(t[1,])
+  # Precision
+  precision <- t[1,1]/sum(t[,1])
+  # F1 score
+  f1 <- (2*recall*precision)/(precision+recall)
+  cat("Accuracy: ",acc, "\n")
+  cat("F1 score: ",f1, "\n")
+  scores <- c(acc,f1)
+  scores
+}
 
-objModel <- train(training_set, 
-                  make.names(train$label), 
-                  method='gbm', 
-                  trControl=control,
-                  verbose = FALSE,
-                  tuneGrid = man_grid)
+scores_gbm <- gbm_model(training_set,testing_set)
 
-predictions <- predict(object=objModel,testing_set, type='raw')
-t <- table(make.names(test$label), predictions)
-# Classification accuracy
-sum(diag(t))/sum(t)
-# Recall
-recall <- t[1,1]/sum(t[1,])
-# Precision
-precision <- t[1,1]/sum(t[,1])
-# F1 score
-f1 <- (2*recall*precision)/(precision+recall)
 
 # Use of POS tagging
 #concatination: term/POS_tag
@@ -231,41 +252,11 @@ library(CORElearn)
 estReliefF <- attrEval(label_ ~ ., train_data, estimator="InfGain", ReliefIterations=30)
 
 best10 <- head(sort(estReliefF, decreasing = TRUE), 10)
-matrixBest10l <- select(train_data,c(names(best10), "label_"))
+training_set_best10 <- as.matrix(select(train_data,c(names(best10))))
+testing_set_best10 <- as.matrix(select(data.frame(testing_set),c(names(best10))))
 
 # re-evaluating models
-# svm with a radial basis kernel
-
-model.svm <- ksvm(matrixBest10, make.names(as.factor(train$label)), kernel = "rbfdot")
-predicted <- predict(model.svm, testing_set, type = "response")
-t <- table(make.names(test$label), predicted)
-
-# Classification accuracy
-sum(diag(t))/sum(t)
-# Recall
-recall <- t[1,1]/sum(t[1,])
-# Precision
-precision <- t[1,1]/sum(t[,1])
-# F1 score
-f1 <- (2*recall*precision)/(precision+recall)
+scores_ksvm_best10 <- ksvm_model(training_set_best10, testing_set_best10)
+scores_gbm_best10 <- gbm_model(training_set_best10, testing_set_best10)
 
 
-matrixBest10 <- select(train_data,names(best10))
-# Stohastic Gradient Boost
-objModel <- train(matrixBest10, 
-                  make.names(train$label), 
-                  method='gbm', 
-                  trControl=control,
-                  verbose = FALSE,
-                  tuneGrid = man_grid)
-
-predic10 <- predict(object=objModel,testing_set, type='raw')
-t10 <- table(make.names(test$label), predic10)
-# Classification accuracy
-sum(diag(t10))/sum(t10)
-# Recall
-recall10 <- t10[1,1]/sum(t10[1,])
-# Precision
-precision10 <- t10[1,1]/sum(t10[,1])
-# F1 score
-f1_10 <- (2*recall10*precision10)/(precision10+recall10)
