@@ -235,13 +235,22 @@ gbm_model <- function(training_set, testing_set){
 
 scores_gbm <- gbm_model(training_set,testing_set)
 
-
 # Use of POS tagging
 #concatination: term/POS_tag
-pos_corpus <- corpus
-for(i in 1:length(pos_corpus)){
-  print(paste(content(pos_corpus[[i]]),posvectors[i], sep="/"))
+pos_concat <- list()
+for(i in 1:2){
+  words <- strsplit(content(corpus[[i]]), " ")
+  pos_concat[[i]] <- paste(words[[1]],posvectors[[i]], sep = "", collapse = " ")
 }
+pos_corpus <- Corpus(VectorSource(pos_concat))
+pos_dtm <- DocumentTermMatrix(corpus, control = list(weighting=weightTfIdf))
+pos_matrix <- cbind(as.matrix(pos_dtm),data$label)
+training_set_pos <- matrix[1:dim(train)[1],-ncol(matrix)]
+testing_set_pos <- matrix[(dim(train)[1]+1):dim(matrix)[1],-ncol(matrix)]
+
+# re-evaluating models with POS
+scores_ksvm_pos <- ksvm_model(training_set_pos, testing_set_pos)
+scores_gbm_pos <- gbm_model(training_set_pos, testing_set_pos)
 
 # 4.UNDERSTANDING
 library(dplyr)
