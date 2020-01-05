@@ -118,7 +118,7 @@ word_ann <- Maxent_Word_Token_Annotator()
 sent_ann <- Maxent_Sent_Token_Annotator()
 
 posvectors <- list()
-for(i in 1:length(train_corpus)){
+for(i in 1:length(corpus)){
   
   s <- as.String(content(corpus[[i]]))
   if(nchar(trimws(s)) == 0){
@@ -131,6 +131,7 @@ for(i in 1:length(train_corpus)){
   a3w <- subset(a3, type == "word")
   tags <- sapply(a3w$features, `[[`, "POS")
   posvectors[[i]] <- tags
+  print(posvectors[[i]])
 }
 
 # 3.MODELING
@@ -214,7 +215,12 @@ precision <- t[1,1]/sum(t[,1])
 # F1 score
 f1 <- (2*recall*precision)/(precision+recall)
 
-# POS??
+# Use of POS tagging
+#concatination: term/POS_tag
+pos_corpus <- corpus
+for(i in 1:length(pos_corpus)){
+  print(paste(content(pos_corpus[[i]]),posvectors[i], sep="/"))
+}
 
 # 4.UNDERSTANDING
 library(dplyr)
