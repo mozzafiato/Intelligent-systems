@@ -260,12 +260,45 @@ library(CORElearn)
 # filter method
 estReliefF <- attrEval(label_ ~ ., train_data, estimator="InfGain", ReliefIterations=30)
 
-best10 <- head(sort(estReliefF, decreasing = TRUE), 10)
-training_set_best10 <- as.matrix(select(train_data,c(names(best10))))
-testing_set_best10 <- as.matrix(select(data.frame(testing_set),c(names(best10))))
+N = 20
+bestN <- head(sort(estReliefF, decreasing = TRUE), N)
+training_set_bestN <- as.matrix(select(train_data,c(names(bestN))))
+testing_set_bestN <- as.matrix(select(data.frame(testing_set),c(names(bestN))))
 
 # re-evaluating models
-scores_ksvm_best10 <- ksvm_model(training_set_best10, testing_set_best10)
-scores_gbm_best10 <- gbm_model(training_set_best10, testing_set_best10)
+scores_ksvm_bestN <- ksvm_model(training_set_bestN, testing_set_bestN)
+scores_gbm_bestN <- gbm_model(training_set_bestN, testing_set_bestN)
 
+# wrapper model
 
+library(randomForest)
+
+train_data$label_ = replace(train_data$label_, train_data$label_=='X0', 0)
+train_data$label_ = replace(train_data$label_, train_data$label_=='X1', 1)
+train_data$label_ = factor(train_data$label_)
+
+names(train_data)[names(train_data) == "shadowbeard"] <- "_shadowbeard"
+names(train_data)[names(train_data) == "shadowshoss"] <- "_shadowshoss"
+
+library("Boruta")
+bor <- Boruta(label_~., data=train_data)
+
+# plot(bor, cex.axis=.7, las=2, xlab="", main="Variable Importance")
+# stats <- attStats(bor)
+# write.table(stats[order(-stats$maxImp),], "wrapper_stats.txt", append = FALSE, sep = " ",row.names = TRUE, col.names = TRUE)
+stats <- read.table("wrapper_stats.txt", sep = " ")
+bestWN <- head(stats[order(-stats$maxImp),], N)
+
+filterNames = names(sort(bestN, decreasing = TRUE))
+wrapperNames = rownames(bestWN)
+
+# Jaccard
+listJac <- c()
+for (i in (1:N)){
+  fil <- filterNames[1:i]
+  wra <- wrapperNames[1:i]
+  jac <- length(intersect(fil, wra)) / length(union(fil, wra))
+  listJac <- c(listJac, jac)
+}
+listJac
+plot(c(seq(1,N)), listJac, xlab="n", ylab="Jaccard")
