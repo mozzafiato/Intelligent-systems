@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 #### Reading data
 
-```{r, include=TRUE, eval=FALSE}
+```{r, include=TRUE, eval=TRUE, warning=FALSE}
 options(warn=-1)
 train <- read.table(file = 'insults/train.tsv', sep = '\t', header = TRUE)
 test <- read.table(file = 'insults/test.tsv', sep = '\t', header = TRUE)
@@ -24,7 +24,7 @@ data <- rbind(train, test)
 
 The function clean_data takes the given data as a parameter and returns a corpus which has punctuation, stopwords and unknown symbols removed. In this case, the parameter data is composed of both train and test files and then splited into training and testing set preserving the same documents as before.
 
-```{r, include=TRUE, eval=FALSE, warning=FALSE}
+```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
 library(ggplot2)
 library(tm)
 library(NLP)
@@ -158,5 +158,168 @@ for(i in 1:length(corpus)){
 }
 
 print(posvectors[[1]])
+```
+
+### 3. Model
+
+#### Class label distribution
+From the table we see that the ratio between the first and the second class is approximately 1:3, from which we can conclude that the datasat is imbalanced.
+
+```{r, include=TRUE, eval=TRUE, warning=FALSE}
+table(train$label)
+table(test$label)
+```
+
+#### Classification models
+
+##### Data representation
+
+For the data representation, we have used document-term matrix composed of the corpus from both training and testing set and later splited the matrix to the two subsets as before. In that way the dtm matrix for both training and testing sets contains the same attributes - terms, which makes is appropriate for the modelling.
+
+For perfomance metrics we have chosen accuracy and F1 score. 
+
+```{r, include=TRUE, eval=TRUE, warning=FALSE}
+#Preparing data
+dtm <- DocumentTermMatrix(corpus, control = list(weighting=weightTfIdf))
+matrix <- cbind(as.matrix(dtm),data$label)
+training_set <- matrix[1:dim(train)[1],-ncol(matrix)]
+testing_set <- matrix[(dim(train)[1]+1):dim(matrix)[1],-ncol(matrix)]
+
+train_data <- data.frame(matrix[1:dim(train)[1],])
+names(train_data)[ncol(train_data)] <- "label_"
+train_data$label_ <- make.names(train_data$label_)
+```
+
+
+##### KSVM - Support Vector Machines
+
+SVM models perform well on text classification. They can handle high dimensional input space and sparse document vectors (the corresponding document vector contains only few entries which are not zero). 
+
+For this model we are using radial basis kernel, because linearly non-separable features often become linearly separable after they are mapped to a high dimensional feature space. However, we don't ever need to compute the feature mappings explicitly: we only need to work with their kernels, which are easier to compute.
+
+```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
+library(kernlab)
+library(mda)
+library(modeltools)
+library(mlr)
+
+# svm with a radial basis kernel
+ksvm_model <- function(training_set, testing_set){
+  print("Running model ksvm...")
+  model.svm <- ksvm(training_set, make.names(as.factor(train$label)), kernel = "rbfdot")
+  predicted <- predict(model.svm, testing_set, type = "response")
+  t <- table(make.names(test$label), predicted)
+  
+  # Classification accuracy
+  acc <- sum(diag(t))/sum(t)
+  # Recall
+  recall <- t[1,1]/sum(t[1,])
+  # Precision
+  precision <- t[1,1]/sum(t[,1])
+  # F1 score
+  f1 <- (2*recall*precision)/(precision+recall)
+  cat("Accuracy: ",acc, "\n")
+  cat("F1 score: ",f1, "\n")
+  scores <- c(acc,f1)
+  scores
+}
+
+#Hyperparameter tuning
+ksvm_task <- makeClassifTask(data = train_data, target = "label_")
+discrete_ps <- makeParamSet(
+  makeDiscreteParam("C", values = c(0.01, 0.05, 0.1,0.5, 1)),
+  makeDiscreteParam("sigma", values = c(0.01, 0.05, 0.1,0.5, 0.6))
+)
+print(discrete_ps)
+
+ctrl <- makeTuneControlGrid()
+rdesc <- makeResampleDesc("CV", iters = 3L)
+
+res <- tuneParams("classif.ksvm", ksvm_task , rdesc, measures=acc, par.set = discrete_ps, control = ctrl)
+
+scores_ksvm <- ksvm_model(training_set,testing_set)
+```
+
+
+##### GBM - Stochastic Gradient Boosting
+
+Gradient boosting is one of the most powerful techniques for building predictive models, where decision trees are used as the weak learner. At each iteration a subsample of the training data is drawn at random (without replacement) from the full training dataset. The randomly selected subsample is then used, instead of the full sample, to fit the base learner.
+
+```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
+library(caret)
+library(gbm)
+
+gbm_model <- function(training_set, testing_set){
+  print("Running model gbm...")
+  
+  #Hyperparameter tuning
+  man_grid <- expand.grid(n.trees = c(50, 100, 150),
+                          interaction.depth = c(1, 3, 4),
+                          shrinkage = 0.1,
+                          n.minobsinnode = 10)
+  
+  control <- trainControl(method='cv',
+                          number=3, 
+                          returnResamp='none', 
+                          summaryFunction = twoClassSummary, 
+                          classProbs = TRUE)
+  
+  objModel <- caret::train(training_set, 
+                    make.names(train$label), 
+                    method='gbm', 
+                    trControl=control,
+                    verbose = FALSE,
+                    tuneGrid = man_grid)
+
+  predictions <- predict(object=objModel,testing_set, type='raw')
+  t <- table(make.names(test$label), predictions)
+  # Classification accuracy
+  acc <- sum(diag(t))/sum(t)
+  # Recall
+  recall <- t[1,1]/sum(t[1,])
+  # Precision
+  precision <- t[1,1]/sum(t[,1])
+  # F1 score
+  f1 <- (2*recall*precision)/(precision+recall)
+  cat("Accuracy: ",acc, "\n")
+  cat("F1 score: ",f1, "\n")
+  scores <- c(acc,f1)
+  scores
+}
+
+scores_gbm <- gbm_model(training_set,testing_set)
+```
+
+
+The two models have approximately the same scores, both of them perfom well.
+
+#### Adding POS tag-based representation
+
+In order to consider the POS tags of the words in our data, each word in the data has been concatinated with its POS tag.
+
+```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
+pos_concat <- list()
+
+for(i in 1:2){
+  words <- strsplit(content(corpus[[i]]), " ")
+  pos_concat[[i]] <- paste(words[[1]],posvectors[[i]], sep = "", collapse = " ")
+}
+pos_corpus <- Corpus(VectorSource(pos_concat))
+content(pos_corpus[[1]])
+
+pos_dtm <- DocumentTermMatrix(corpus, control = list(weighting=weightTfIdf))
+pos_matrix <- cbind(as.matrix(pos_dtm),data$label)
+training_set_pos <- matrix[1:dim(train)[1],-ncol(matrix)]
+testing_set_pos <- matrix[(dim(train)[1]+1):dim(matrix)[1],-ncol(matrix)]
+
+```
+
+The POS tagging did not have a significant improvement to the performance of the models. For the ksvm model almost no improvement, for the gbm model there is an improvement of 0.1 - 0.2.
+
+```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
+# re-evaluating models with POS
+scores_ksvm_pos <- ksvm_model(training_set_pos, testing_set_pos)
+scores_gbm_pos <- gbm_model(training_set_pos, testing_set_pos)
+
 ```
 

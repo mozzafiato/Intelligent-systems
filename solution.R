@@ -1,7 +1,4 @@
-gc()
-rm(list = ls())
-options(warn=-1)
-options(java.parameters = "- Xmx1024m")
+
 library(ggplot2)
 library(tm)
 library(readr)
@@ -179,7 +176,6 @@ scores_ksvm <- ksvm_model(training_set,testing_set)
 
 library(mda)
 library(modeltools)
-#Se ta error je ostal:
 train_data <- data.frame(matrix[1:dim(train)[1],])
 names(train_data)[ncol(train_data)] <- "label_"
 train_data$label_ <- make.names(train_data$label_)
