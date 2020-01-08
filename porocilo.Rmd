@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 #### Reading data
 
 ```{r, include=TRUE, eval=FALSE}
-
+options(warn=-1)
 train <- read.table(file = 'insults/train.tsv', sep = '\t', header = TRUE)
 test <- read.table(file = 'insults/test.tsv', sep = '\t', header = TRUE)
 data <- rbind(train, test)
@@ -24,7 +24,12 @@ data <- rbind(train, test)
 
 The function clean_data takes the given data as a parameter and returns a corpus which has punctuation, stopwords and unknown symbols removed. In this case, the parameter data is composed of both train and test files and then splited into training and testing set preserving the same documents as before.
 
-```{r, include=TRUE, eval=FALSE}
+```{r, include=TRUE, eval=FALSE, warning=FALSE}
+library(ggplot2)
+library(tm)
+library(NLP)
+library(openNLP)
+
 clean_data <- function (data) {
   #Remove unknown symbols
   data$text_a <- sapply(data$text_a, function(x) gsub("x[[:alnum:]][[:digit:]]", "", as.character(x)))
@@ -69,9 +74,9 @@ clean_data <- function (data) {
     corpus <- tm_map(corpus, removeWords, as.vector(entities(ann, "organization")))
     content(corpus[[i]])
   }
-  corpus <- tm_map(corpus, stripWhitespace)
   corpus <- tm_map(corpus, content_transformer(tolower))
   corpus <- tm_map(corpus, stemDocument)
+  corpus <- tm_map(corpus, stripWhitespace)
   corpus
 }
 
@@ -89,30 +94,69 @@ content(test_corpus[[1]])
 
 #### Frequency of words
 
-```{r, include=TRUE, eval=FALSE}
+In the graph below we can observe that a certain group of words is more frequently used. There are a lot of words that have a small occurence.The most frequently used words are shown in the data frame below.
+
+```{r, include=TRUE, eval=TRUE}
 tdm <- TermDocumentMatrix(train_corpus)
 termFrequency <- rowSums(as.matrix(tdm))
 #termFrequency <- subset(termFrequency, termFrequency >= 10)
 v <- sort(rowSums(as.matrix(tdm)),decreasing=TRUE)
 d <- data.frame(word = names(v),freq=v)
 qplot(seq(length(termFrequency)),sort(termFrequency), xlab = "index", ylab = "Freq")
-head(d, 10)
+head(d, 100)
 ```
 
 #### Clustering
-```{r, include=TRUE, eval=FALSE}
+
+The first four graph represent the clustering for different value of the parameter k. The last graph shows the documents colored according to class labels. From the assigned clusters we can conclude that clustering works bad in this case. 
+
+```{r, include=TRUE, eval=TRUE, warning=FALSE}
+library(Rtsne)
+
 dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
 mat <- as.matrix(dtm)
+tsne.proj <- Rtsne(mat, perplexity=10, theta=0.2, dims=2, check_duplicates = F)
+df.tsne <-tsne.proj$Y
 k <- c(2, 4, 8, 16)
 
 for(i in 1:length(k)){
   kmeansResult <- kmeans(mat, k[i])
-  tsne.proj <- Rtsne(as.matrix(kmeansResult$cluster), perplexity=10, theta=0.2, dims=2, check_duplicates = F)
-  df.tsne <-tsne.proj$Y
   #visualize the cluster assignments
   print(qplot(df.tsne[,1],df.tsne[,2], color = kmeansResult$cluster))
-  #plot document representations according to class labels
-  print(qplot(df.tsne[,1],df.tsne[,2], color = train$label))
+  
 }
 
+#plot document representations according to class labels
+print(qplot(df.tsne[,1],df.tsne[,2], color = train$label))
+
 ```
+
+#### Document representation with POS tags
+
+```{r, include=TRUE, eval=TRUE, warning=FALSE}
+
+#POS vector for each document
+pos_ann <- Maxent_POS_Tag_Annotator()
+word_ann <- Maxent_Word_Token_Annotator()
+sent_ann <- Maxent_Sent_Token_Annotator()
+
+posvectors <- list()
+for(i in 1:length(corpus)){
+  
+  s <- as.String(content(corpus[[i]]))
+  if(nchar(trimws(s)) == 0){
+    posvectors[[i]] <- NULL
+    next
+  }
+  a1 <- annotate(s, sent_ann)
+  a2 <- annotate(s, word_ann, a1)
+  a3 <- annotate(s, pos_ann, a2)
+  a3w <- subset(a3, type == "word")
+  tags <- sapply(a3w$features, `[[`, "POS")
+  posvectors[[i]] <- tags
+  #print(posvectors[[i]])
+}
+
+print(posvectors[[1]])
+```
+
