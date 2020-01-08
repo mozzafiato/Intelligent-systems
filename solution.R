@@ -94,24 +94,28 @@ content(test_corpus[[1]])
 tdm <- TermDocumentMatrix(train_corpus)
 termFrequency <- rowSums(as.matrix(tdm))
 #termFrequency <- subset(termFrequency, termFrequency >= 10)
+v <- sort(rowSums(as.matrix(tdm)),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
 qplot(seq(length(termFrequency)),sort(termFrequency), xlab = "index", ylab = "Freq")
-
+head(d, 10)
 #Clustering
 
 #of of documents according to co-occurrence of terms
 dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
 mat <- as.matrix(dtm)
+tsne.proj <- Rtsne(mat, perplexity=10, theta=0.2, dims=2, check_duplicates = F)
+df.tsne <-tsne.proj$Y
 k <- c(2, 4, 8, 16)
 
 for(i in 1:length(k)){
   kmeansResult <- kmeans(mat, k[i])
-  tsne.proj <- Rtsne(as.matrix(kmeansResult$cluster), perplexity=10, theta=0.2, dims=2, check_duplicates = F)
-  df.tsne <-tsne.proj$Y
   #visualize the cluster assignments
   print(qplot(df.tsne[,1],df.tsne[,2], color = kmeansResult$cluster))
-  #plot document representations according to class labels
-  print(qplot(df.tsne[,1],df.tsne[,2], color = train$label))
+  
 }
+
+#plot document representations according to class labels
+print(qplot(df.tsne[,1],df.tsne[,2], color = train$label))
 
 #POS vector for each document
 pos_ann <- Maxent_POS_Tag_Annotator()
@@ -194,7 +198,6 @@ res <- tuneParams("classif.ksvm", ksvm_task , rdesc, measures=acc, par.set = dis
 print(res)
 #Tune #Op. pars: C=0.5; sigma=0.1
 
-# DELAAA <3
 # Stohastic Gradient Boost
 
 gbm_model <- function(training_set, testing_set){
