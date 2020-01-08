@@ -1,0 +1,118 @@
+---
+title: "2. Assignment - Mining insults"
+author: "Melanija Kraljevska, Jana Štremfelj"
+date: "1/7/2020"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### Reading data
+
+```{r, include=TRUE, eval=FALSE}
+
+train <- read.table(file = 'insults/train.tsv', sep = '\t', header = TRUE)
+test <- read.table(file = 'insults/test.tsv', sep = '\t', header = TRUE)
+data <- rbind(train, test)
+```
+
+### 1. Cleaning
+
+The function clean_data takes the given data as a parameter and returns a corpus which has punctuation, stopwords and unknown symbols removed. In this case, the parameter data is composed of both train and test files and then splited into training and testing set preserving the same documents as before.
+
+```{r, include=TRUE, eval=FALSE}
+clean_data <- function (data) {
+  #Remove unknown symbols
+  data$text_a <- sapply(data$text_a, function(x) gsub("x[[:alnum:]][[:digit:]]", "", as.character(x)))
+  data$text_a <- sapply(data$text_a, function(x) gsub("\\n", "", as.character(x)))
+  data$text_a <- sapply(data$text_a, function(x) gsub("\\r", "", as.character(x)))
+  data$text_a <- sapply(data$text_a, function(x) gsub("\\t", "", as.character(x)))
+  data$text_a <- sapply(data$text_a, function(x) gsub("\\u[[:digit:]][[:digit:]][[:digit:]][[:alnum:]]", "", as.character(x)))
+  
+  corpus <- Corpus(VectorSource(data$text_a))
+  
+  #Remove punctuation and stopwords
+  corpus <- tm_map(corpus, removeWords, stopwords('english'))
+  conn = file("english.stop.txt", open="r")
+  mystopwords = readLines(conn)
+  close(conn)
+  corpus <- tm_map(corpus, removeWords, mystopwords)
+  corpus <- tm_map(corpus, removeNumbers)
+  corpus <- tm_map(corpus, removePunctuation)
+  corpus <- tm_map(corpus, stripWhitespace)
+  
+  #Anonymize proper nouns
+  sent_ann <- Maxent_Sent_Token_Annotator()
+  word_ann <- Maxent_Word_Token_Annotator() 
+  person_ann <- Maxent_Entity_Annotator(kind = "person")
+  location_ann <- Maxent_Entity_Annotator(kind = "location")
+  organization_ann <- Maxent_Entity_Annotator(kind = "organization")
+  
+  entities <- function(annots, kind)
+  {
+    k <- sapply(annots$features, `[[`, "kind")
+    s[annots[k == kind]]
+  }
+  
+  for (i in 1:length(corpus)){
+    s <- as.String(content(corpus[[i]]))
+    if(nchar(trimws(s)) == 0) next
+    
+    ann <- annotate(s, list(sent_ann, word_ann, person_ann, location_ann, organization_ann))
+    
+    corpus <- tm_map(corpus, removeWords, as.vector(entities(ann, "person")))
+    corpus <- tm_map(corpus, removeWords, as.vector(entities(ann, "location")))
+    corpus <- tm_map(corpus, removeWords, as.vector(entities(ann, "organization")))
+    content(corpus[[i]])
+  }
+  corpus <- tm_map(corpus, stripWhitespace)
+  corpus <- tm_map(corpus, content_transformer(tolower))
+  corpus <- tm_map(corpus, stemDocument)
+  corpus
+}
+
+#get corpus for all data
+corpus <- clean_data(data)
+train_corpus <- corpus[1:dim(train)[1]]
+#print first document of train corpus
+content(train_corpus[[1]])
+test_corpus <- corpus[(dim(train)[1]+1):length(corpus)]
+#print first document of test corpus
+content(test_corpus[[1]])
+```
+
+### 2. Exploration
+
+#### Frequency of words
+
+```{r, include=TRUE, eval=FALSE}
+tdm <- TermDocumentMatrix(train_corpus)
+termFrequency <- rowSums(as.matrix(tdm))
+#termFrequency <- subset(termFrequency, termFrequency >= 10)
+v <- sort(rowSums(as.matrix(tdm)),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+qplot(seq(length(termFrequency)),sort(termFrequency), xlab = "index", ylab = "Freq")
+head(d, 10)
+```
+
+#### Clustering
+```{r, include=TRUE, eval=FALSE}
+dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
+mat <- as.matrix(dtm)
+k <- c(2, 4, 8, 16)
+
+for(i in 1:length(k)){
+  kmeansResult <- kmeans(mat, k[i])
+  tsne.proj <- Rtsne(as.matrix(kmeansResult$cluster), perplexity=10, theta=0.2, dims=2, check_duplicates = F)
+  df.tsne <-tsne.proj$Y
+  #visualize the cluster assignments
+  print(qplot(df.tsne[,1],df.tsne[,2], color = kmeansResult$cluster))
+  #plot document representations according to class labels
+  print(qplot(df.tsne[,1],df.tsne[,2], color = train$label))
+}
+
+```
