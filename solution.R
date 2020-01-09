@@ -17,9 +17,6 @@ library(mlr)
 library(caret)
 library(RWeka)
 
-setwd("C:/Users/Melanija/Desktop/Gradiva/5 semestar/IS/2. Seminarska")
-#setwd("C:/Users/Jana/Documents/fax/3.letnik/1.semester/IS/2.domaca/")
-
 train <- read.table(file = 'insults/train.tsv', sep = '\t', header = TRUE)
 test <- read.table(file = 'insults/test.tsv', sep = '\t', header = TRUE)
 data <- rbind(train, test)

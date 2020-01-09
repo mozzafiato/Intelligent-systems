@@ -3,6 +3,7 @@ title: "2. Assignment - Mining insults"
 author: "Melanija Kraljevska, Jana Štremfelj"
 date: "1/7/2020"
 output:
+  pdf_document: default
   html_document:
     df_print: paged
 ---
@@ -11,7 +12,7 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-#### Reading data
+### Reading data
 
 ```{r, include=TRUE, eval=TRUE, warning=FALSE}
 options(warn=-1)
@@ -101,7 +102,7 @@ termFrequency <- rowSums(as.matrix(tdm))
 v <- sort(rowSums(as.matrix(tdm)),decreasing=TRUE)
 d <- data.frame(word = names(v),freq=v)
 qplot(seq(length(termFrequency)),sort(termFrequency), xlab = "index", ylab = "Freq")
-head(d, 100)
+head(d, 10)
 ```
 
 #### Clustering
@@ -187,11 +188,26 @@ SVM models perform well on text classification. They can handle high dimensional
 
 For this model we are using radial basis kernel, because linearly non-separable features often become linearly separable after they are mapped to a high dimensional feature space. However, we don't ever need to compute the feature mappings explicitly: we only need to work with their kernels, which are easier to compute.
 
-```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
-library(kernlab)
+```{r, include=TRUE, eval=FALSE, warning=FALSE, message=FALSE}
 library(mda)
 library(modeltools)
 library(mlr)
+
+#Hyperparameter tuning
+ksvm_task <- makeClassifTask(data = train_data, target = "label_")
+discrete_ps <- makeParamSet(
+  makeDiscreteParam("C", values = c(0.01, 0.05, 0.1,0.5, 1)),
+  makeDiscreteParam("sigma", values = c(0.01, 0.05, 0.1,0.5, 0.6))
+)
+print(discrete_ps)
+ctrl <- makeTuneControlGrid()
+rdesc <- makeResampleDesc("CV", iters = 3L)
+res <- tuneParams("classif.ksvm", ksvm_task , rdesc, measures=acc, par.set = discrete_ps, control = ctrl)
+```
+
+```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
+library(kernlab)
+
 # svm with a radial basis kernel
 ksvm_model <- function(training_set, testing_set){
   print("Running model ksvm...")
@@ -212,16 +228,6 @@ ksvm_model <- function(training_set, testing_set){
   scores <- c(acc,f1)
   scores
 }
-#Hyperparameter tuning
-ksvm_task <- makeClassifTask(data = train_data, target = "label_")
-discrete_ps <- makeParamSet(
-  makeDiscreteParam("C", values = c(0.01, 0.05, 0.1,0.5, 1)),
-  makeDiscreteParam("sigma", values = c(0.01, 0.05, 0.1,0.5, 0.6))
-)
-print(discrete_ps)
-ctrl <- makeTuneControlGrid()
-rdesc <- makeResampleDesc("CV", iters = 3L)
-res <- tuneParams("classif.ksvm", ksvm_task , rdesc, measures=acc, par.set = discrete_ps, control = ctrl)
 scores_ksvm <- ksvm_model(training_set,testing_set)
 ```
 
@@ -301,33 +307,38 @@ scores_ksvm_pos <- ksvm_model(training_set_pos, testing_set_pos)
 scores_gbm_pos <- gbm_model(training_set_pos, testing_set_pos)
 ```
 
-### 4.UNDERSTANDING
-#### feature ranking
+#### 4. Understanding
+##### Feature ranking
 
 The method evaluates the quality of the features variables due to target variable.
 ##### filter method
+```{r, include=TRUE, eval=FALSE, warning=FALSE, message=FALSE}
+
+N <- 20
+estReliefF <- attrEval(label_ ~ ., train_data, estimator="InfGain", ReliefIterations=30)
+ bestN <- head(sort(estReliefF, decreasing = TRUE), N)
+write.table(bestN, "filter_stats.txt", append = FALSE, sep = " ",row.names = TRUE, col.names = TRUE)
+```
+
+The results of the function attrEval are stored in the file "filter_stats.txt", so we will read them from here.
 ```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
 library(dplyr)
 library(CORElearn) 
-estReliefF <- attrEval(label_ ~ ., train_data, estimator="InfGain", ReliefIterations=30)
-
-N = 20
-# bestN <- head(sort(estReliefF, decreasing = TRUE), N)
-# write.table(bestN, "filter_stats.txt", append = FALSE, sep = " ",row.names = TRUE, col.names = TRUE)
 bestN <- read.table("filter_stats.txt", sep = " ")
-training_set_bestN <- as.matrix(select(train_data,c(names(bestN))))
-testing_set_bestN <- as.matrix(select(data.frame(testing_set),c(names(bestN))))
+training_set_bestN <- as.matrix(select(train_data,c(rownames(bestN))))
+testing_set_bestN <- as.matrix(select(data.frame(testing_set),c(rownames(bestN))))
 ```
 
-###### re-evaluating models
+###### Re-evaluating models
 ```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
 scores_ksvm_bestN <- ksvm_model(training_set_bestN, testing_set_bestN)
 scores_gbm_bestN <- gbm_model(training_set_bestN, testing_set_bestN)
 ```
 
-For the wrapper method we used the Boruta library that selected important features vias random forest. 
-##### wrapper model
-```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
+
+##### Wrapper model
+For the wrapper method we used the Boruta library that selected important features vias random forest. The results from the Boruta method are stored in the file "wrapper_stats.txt".
+```{r, include=TRUE, eval=FALSE, warning=FALSE, message=FALSE}
 library(randomForest)
 
 train_data$label_ = replace(train_data$label_, train_data$label_=='X0', 0)
@@ -339,20 +350,26 @@ names(train_data)[names(train_data) == "shadowshoss"] <- "_shadowshoss"
 
 library("Boruta")
 bor <- Boruta(label_~., data=train_data)
-```
 
-# plot(bor, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-# stats <- attStats(bor)
-# write.table(stats[order(-stats$maxImp),], "wrapper_stats.txt", append = FALSE, sep = " ",row.names = TRUE, col.names = TRUE)
+
+ plot(bor, cex.axis=.7, las=2, xlab="", main="Variable Importance")
+ stats <- attStats(bor)
+ write.table(stats[order(-stats$maxImp),], "wrapper_stats.txt", append = FALSE, sep = " ",row.names = TRUE, col.names = TRUE)
+```
 
 As we can see on the graph both models choose 5 to 15 similar most important features. They do not choose the same most important features if the number of chosen is less than five. If we extract more than 15 important features the models starts to choose different words because none of the them is later on very impornant.
 
 ```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
+N <- 20
 stats <- read.table("wrapper_stats.txt", sep = " ")
 bestWN <- head(stats[order(-stats$maxImp),], N)
 
-filterNames = names(sort(bestN, decreasing = TRUE))
-wrapperNames = rownames(bestWN)
+filterNames <- rownames(bestN)
+print("Most important terms from filter method")
+print(filterNames)
+wrapperNames <- rownames(bestWN)
+print("Most important terms from wrapper method")
+print(wrapperNames)
 
 # Jaccard
 listJac <- c()
@@ -362,6 +379,5 @@ for (i in (1:N)){
   jac <- length(intersect(fil, wra)) / length(union(fil, wra))
   listJac <- c(listJac, jac)
 }
-listJac
 plot(c(seq(1,N)), listJac, xlab="n", ylab="Jaccard")
 ```
