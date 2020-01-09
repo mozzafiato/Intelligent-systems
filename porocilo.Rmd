@@ -29,7 +29,6 @@ library(ggplot2)
 library(tm)
 library(NLP)
 library(openNLP)
-
 clean_data <- function (data) {
   #Remove unknown symbols
   data$text_a <- sapply(data$text_a, function(x) gsub("x[[:alnum:]][[:digit:]]", "", as.character(x)))
@@ -79,7 +78,6 @@ clean_data <- function (data) {
   corpus <- tm_map(corpus, stripWhitespace)
   corpus
 }
-
 #get corpus for all data
 corpus <- clean_data(data)
 train_corpus <- corpus[1:dim(train)[1]]
@@ -112,34 +110,28 @@ The first four graph represent the clustering for different value of the paramet
 
 ```{r, include=TRUE, eval=TRUE, warning=FALSE}
 library(Rtsne)
-
 dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
 mat <- as.matrix(dtm)
 tsne.proj <- Rtsne(mat, perplexity=10, theta=0.2, dims=2, check_duplicates = F)
 df.tsne <-tsne.proj$Y
 k <- c(2, 4, 8, 16)
-
 for(i in 1:length(k)){
   kmeansResult <- kmeans(mat, k[i])
   #visualize the cluster assignments
   print(qplot(df.tsne[,1],df.tsne[,2], color = kmeansResult$cluster))
   
 }
-
 #plot document representations according to class labels
 print(qplot(df.tsne[,1],df.tsne[,2], color = train$label))
-
 ```
 
 #### Document representation with POS tags
 
 ```{r, include=TRUE, eval=TRUE, warning=FALSE}
-
 #POS vector for each document
 pos_ann <- Maxent_POS_Tag_Annotator()
 word_ann <- Maxent_Word_Token_Annotator()
 sent_ann <- Maxent_Sent_Token_Annotator()
-
 posvectors <- list()
 for(i in 1:length(corpus)){
   
@@ -156,14 +148,13 @@ for(i in 1:length(corpus)){
   posvectors[[i]] <- tags
   #print(posvectors[[i]])
 }
-
 print(posvectors[[1]])
 ```
 
 ### 3. Model
 
 #### Class label distribution
-From the table we see that the ratio between the first and the second class is approximately 1:3, from which we can conclude that the datasat is imbalanced.
+From the table we see that the ratio between the first and the second class is approximately 1:3, from which we can conclude that the dataset is imbalanced.
 
 ```{r, include=TRUE, eval=TRUE, warning=FALSE}
 table(train$label)
@@ -184,7 +175,6 @@ dtm <- DocumentTermMatrix(corpus, control = list(weighting=weightTfIdf))
 matrix <- cbind(as.matrix(dtm),data$label)
 training_set <- matrix[1:dim(train)[1],-ncol(matrix)]
 testing_set <- matrix[(dim(train)[1]+1):dim(matrix)[1],-ncol(matrix)]
-
 train_data <- data.frame(matrix[1:dim(train)[1],])
 names(train_data)[ncol(train_data)] <- "label_"
 train_data$label_ <- make.names(train_data$label_)
@@ -202,7 +192,6 @@ library(kernlab)
 library(mda)
 library(modeltools)
 library(mlr)
-
 # svm with a radial basis kernel
 ksvm_model <- function(training_set, testing_set){
   print("Running model ksvm...")
@@ -223,7 +212,6 @@ ksvm_model <- function(training_set, testing_set){
   scores <- c(acc,f1)
   scores
 }
-
 #Hyperparameter tuning
 ksvm_task <- makeClassifTask(data = train_data, target = "label_")
 discrete_ps <- makeParamSet(
@@ -231,12 +219,9 @@ discrete_ps <- makeParamSet(
   makeDiscreteParam("sigma", values = c(0.01, 0.05, 0.1,0.5, 0.6))
 )
 print(discrete_ps)
-
 ctrl <- makeTuneControlGrid()
 rdesc <- makeResampleDesc("CV", iters = 3L)
-
 res <- tuneParams("classif.ksvm", ksvm_task , rdesc, measures=acc, par.set = discrete_ps, control = ctrl)
-
 scores_ksvm <- ksvm_model(training_set,testing_set)
 ```
 
@@ -248,7 +233,6 @@ Gradient boosting is one of the most powerful techniques for building predictive
 ```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
 library(caret)
 library(gbm)
-
 gbm_model <- function(training_set, testing_set){
   print("Running model gbm...")
   
@@ -270,7 +254,6 @@ gbm_model <- function(training_set, testing_set){
                     trControl=control,
                     verbose = FALSE,
                     tuneGrid = man_grid)
-
   predictions <- predict(object=objModel,testing_set, type='raw')
   t <- table(make.names(test$label), predictions)
   # Classification accuracy
@@ -286,7 +269,6 @@ gbm_model <- function(training_set, testing_set){
   scores <- c(acc,f1)
   scores
 }
-
 scores_gbm <- gbm_model(training_set,testing_set)
 ```
 
@@ -299,19 +281,16 @@ In order to consider the POS tags of the words in our data, each word in the dat
 
 ```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
 pos_concat <- list()
-
 for(i in 1:2){
   words <- strsplit(content(corpus[[i]]), " ")
   pos_concat[[i]] <- paste(words[[1]],posvectors[[i]], sep = "", collapse = " ")
 }
 pos_corpus <- Corpus(VectorSource(pos_concat))
 content(pos_corpus[[1]])
-
 pos_dtm <- DocumentTermMatrix(corpus, control = list(weighting=weightTfIdf))
 pos_matrix <- cbind(as.matrix(pos_dtm),data$label)
 training_set_pos <- matrix[1:dim(train)[1],-ncol(matrix)]
 testing_set_pos <- matrix[(dim(train)[1]+1):dim(matrix)[1],-ncol(matrix)]
-
 ```
 
 The POS tagging did not have a significant improvement to the performance of the models. For the ksvm model almost no improvement, for the gbm model there is an improvement of 0.1 - 0.2.
@@ -320,6 +299,69 @@ The POS tagging did not have a significant improvement to the performance of the
 # re-evaluating models with POS
 scores_ksvm_pos <- ksvm_model(training_set_pos, testing_set_pos)
 scores_gbm_pos <- gbm_model(training_set_pos, testing_set_pos)
-
 ```
 
+### 4.UNDERSTANDING
+#### feature ranking
+
+The method evaluates the quality of the features variables due to target variable.
+##### filter method
+```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
+library(dplyr)
+library(CORElearn) 
+estReliefF <- attrEval(label_ ~ ., train_data, estimator="InfGain", ReliefIterations=30)
+
+N = 20
+# bestN <- head(sort(estReliefF, decreasing = TRUE), N)
+# write.table(bestN, "filter_stats.txt", append = FALSE, sep = " ",row.names = TRUE, col.names = TRUE)
+bestN <- read.table("filter_stats.txt", sep = " ")
+training_set_bestN <- as.matrix(select(train_data,c(names(bestN))))
+testing_set_bestN <- as.matrix(select(data.frame(testing_set),c(names(bestN))))
+```
+
+###### re-evaluating models
+```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
+scores_ksvm_bestN <- ksvm_model(training_set_bestN, testing_set_bestN)
+scores_gbm_bestN <- gbm_model(training_set_bestN, testing_set_bestN)
+```
+
+For the wrapper method we used the Boruta library that selected important features vias random forest. 
+##### wrapper model
+```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
+library(randomForest)
+
+train_data$label_ = replace(train_data$label_, train_data$label_=='X0', 0)
+train_data$label_ = replace(train_data$label_, train_data$label_=='X1', 1)
+train_data$label_ = factor(train_data$label_)
+
+names(train_data)[names(train_data) == "shadowbeard"] <- "_shadowbeard"
+names(train_data)[names(train_data) == "shadowshoss"] <- "_shadowshoss"
+
+library("Boruta")
+bor <- Boruta(label_~., data=train_data)
+```
+
+# plot(bor, cex.axis=.7, las=2, xlab="", main="Variable Importance")
+# stats <- attStats(bor)
+# write.table(stats[order(-stats$maxImp),], "wrapper_stats.txt", append = FALSE, sep = " ",row.names = TRUE, col.names = TRUE)
+
+As we can see on the graph both models choose 5 to 15 similar most important features. They do not choose the same most important features if the number of chosen is less than five. If we extract more than 15 important features the models starts to choose different words because none of the them is later on very impornant.
+
+```{r, include=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
+stats <- read.table("wrapper_stats.txt", sep = " ")
+bestWN <- head(stats[order(-stats$maxImp),], N)
+
+filterNames = names(sort(bestN, decreasing = TRUE))
+wrapperNames = rownames(bestWN)
+
+# Jaccard
+listJac <- c()
+for (i in (1:N)){
+  fil <- filterNames[1:i]
+  wra <- wrapperNames[1:i]
+  jac <- length(intersect(fil, wra)) / length(union(fil, wra))
+  listJac <- c(listJac, jac)
+}
+listJac
+plot(c(seq(1,N)), listJac, xlab="n", ylab="Jaccard")
+```
